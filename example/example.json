@@ -1,0 +1,23 @@
+{
+    "signature": {
+        "type":     "hmac-sha256",
+        "key":      "4D6F1FFEAEB9A7DD1ECB19DE0386B153CC21016479EF557B8E6051203B4E3D25"
+    },
+    
+    "encryption": {
+        "type":     "aes128-cbc",
+        "key":      "3137A615BDA52F05A67924BF534E8C1B"
+    },
+    
+    "images": [
+        {
+            "path":     "foobar.bin",
+            "id":       "main"
+        },
+        
+        {
+            "path":     "barfoo.bin",
+            "id":       "fpga"
+        }
+    ]
+}

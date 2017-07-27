@@ -66,6 +66,12 @@ const char* fpk_result_to_string(fpk_result_t result)
     case FPK_RESULT_UNSUPPORTED_CIPHER_TYPE:
         return "unsupported cipher type";
         
+    case FPK_RESULT_UNSUPPORTED_VERSION:
+        return "unsupported fpk file version";
+        
+    case FPK_RESULT_INVALID_FPK_FILE:
+        return "invalid fpk file";
+        
     default:
         return "undefined result";
     }
@@ -77,7 +83,15 @@ const char* fpk_result_to_string(fpk_result_t result)
 static fpk_result_t read_file(fpk_context_t* ctx, uint8_t* buffer,
         uint8_t n_bytes)
 {
-    return ctx->hooks->read_file(buffer, n_bytes, ctx->user_data);
+    fpk_result_t result;
+    
+    result = ctx->hooks->read_file(buffer, n_bytes, ctx->user_data);
+    
+    if ( result == FPK_RESULT_OK )
+    {
+    }
+    
+    return result;
 }
 
 
@@ -87,18 +101,25 @@ static fpk_result_t seek_file(fpk_context_t* ctx, uint32_t position)
 }
 
 
-
-
+static fpk_result_t verify_preamble(fpk_context_t* ctx)
+{
+    
+}
 
 
 fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
         const fpk_hooks_t* hooks, void* user_data)
 {
+    fpk_result_t result;
+    
     ctx->options = options;
     ctx->hooks = hooks;
     ctx->user_data = user_data;
     ctx->buffer_in = 0;
     ctx->buffer_out = 0;
+    
+    result = verify_preamble(ctx);
+    if ( result != FPK_RESULT_OK ) return result;
     
     return FPK_RESULT_OK;
 }

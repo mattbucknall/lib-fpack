@@ -115,6 +115,7 @@ typedef struct
 #ifdef FPK_ENABLE_AES128_CBC
 
     uint8_t aes128_round_key[176];
+    uint8_t aes128_iv[16];
     
 #endif /* FPK_ENABLE_AES128_CBC */
     

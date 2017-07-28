@@ -411,49 +411,6 @@ static const uint8_t AES128_RCON[11] =
 };
 
 
-static void aes128_init(fpk_context_t* ctx, const uint8_t* key)
-{
-    uint8_t* round_key = ctx->aes128_round_key;
-    uint8_t temp[4];
-    uint8_t byte;
-    
-    memcpy(round_key, key, 16);
-    
-    for (uint8_t i = 4; i < 44; i++)
-    {
-        uint8_t p = (i - 1) * 4;
-        
-        temp[0] = round_key[p];
-        temp[1] = round_key[p + 1];
-        temp[2] = round_key[p + 2];
-        temp[3] = round_key[p + 4];
-        
-        if ( !(i & 3) )
-        {
-            byte = temp[0];
-            temp[0] = temp[1];
-            temp[1] = temp[2];
-            temp[2] = temp[3];
-            temp[3] = byte;
-            
-            temp[0] = AES128_SBOX[temp[0]];
-            temp[1] = AES128_SBOX[temp[1]];
-            temp[2] = AES128_SBOX[temp[2]];
-            temp[3] = AES128_SBOX[temp[3]];
-            
-            temp[0] = temp[0] ^ AES128_RCON[i / 4];
-        }
-        
-        p = (i - 4) * 4;
-        
-        round_key[i * 4] = round_key[p] ^ temp[0];
-        round_key[i * 4 + 1] = round_key[p + 1] ^ temp[1];
-        round_key[i * 4 + 2] = round_key[p + 2] ^ temp[2];
-        round_key[i * 4 + 3] = round_key[p + 3] ^ temp[3];
-    }
-}
-
-
 static void aes128_add_round_key(fpk_context_t* ctx, uint8_t round,
         uint8_t* block)
 {
@@ -547,7 +504,51 @@ static void aes128_inv_mix_columns(fpk_context_t* ctx, uint8_t* block)
 }
 
 
-static void aes128_decipher(fpk_context_t* ctx, uint8_t* block)
+static void aes128_init(fpk_context_t* ctx, const uint8_t* key)
+{
+    uint8_t* round_key = ctx->aes128_round_key;
+    uint8_t temp[4];
+    uint8_t byte;
+    
+    memset(ctx->aes128_iv, 0, 16);
+    memcpy(round_key, key, 16);
+    
+    for (uint8_t i = 4; i < 44; i++)
+    {
+        uint8_t p = (i - 1) * 4;
+        
+        temp[0] = round_key[p];
+        temp[1] = round_key[p + 1];
+        temp[2] = round_key[p + 2];
+        temp[3] = round_key[p + 4];
+        
+        if ( !(i & 3) )
+        {
+            byte = temp[0];
+            temp[0] = temp[1];
+            temp[1] = temp[2];
+            temp[2] = temp[3];
+            temp[3] = byte;
+            
+            temp[0] = AES128_SBOX[temp[0]];
+            temp[1] = AES128_SBOX[temp[1]];
+            temp[2] = AES128_SBOX[temp[2]];
+            temp[3] = AES128_SBOX[temp[3]];
+            
+            temp[0] = temp[0] ^ AES128_RCON[i / 4];
+        }
+        
+        p = (i - 4) * 4;
+        
+        round_key[i * 4] = round_key[p] ^ temp[0];
+        round_key[i * 4 + 1] = round_key[p + 1] ^ temp[1];
+        round_key[i * 4 + 2] = round_key[p + 2] ^ temp[2];
+        round_key[i * 4 + 3] = round_key[p + 3] ^ temp[3];
+    }
+}
+
+
+static void aes128_decrypt_block(fpk_context_t* ctx, uint8_t* block)
 {
     aes128_add_round_key(ctx, 10, block);
     
@@ -562,6 +563,23 @@ static void aes128_decipher(fpk_context_t* ctx, uint8_t* block)
     aes128_inv_shift_rows(ctx, block);
     aes128_inv_substitute(ctx, block);
     aes128_add_round_key(ctx, 0, block);
+}
+
+
+static void aes128_decrypt_cbc(fpk_context_t* ctx, uint8_t* block)
+{
+    uint8_t temp[16];
+    uint8_t* iv = ctx->aes128_iv;
+    
+    memcpy(temp, iv, 16);
+    memcpy(iv, block, 16);
+    
+    aes128_decrypt_block(ctx, block);
+    
+    for (uint8_t i = 0; i < 16; i++)
+    {
+        block[i] ^= temp[i];
+    }
 }
 
 #endif /* FPK_ENABLE_AES128_CBC */

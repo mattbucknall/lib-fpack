@@ -117,9 +117,11 @@ int main(int argc, char* argv[])
 {
     fpk_result_t result;
     
+    printf("%lu\n", sizeof(fpk_context_t));
+    
     if ( argc < 2 )
     {
-        puts("Usage: example <fpk-file");
+        puts("Usage: example <fpk-file>");
         return 0;
     }
     

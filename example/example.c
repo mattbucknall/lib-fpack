@@ -37,8 +37,8 @@ static FILE* m_output;
 static fpk_result_t read_file_cb(uint8_t* buffer, uint8_t n_bytes,
             void* user_data)
 {
-    return fread(buffer, n_bytes, 1, m_input) == n_bytes ?
-            FPK_RESULT_OK : FPK_RESULT_READ_ERROR;
+    if ( fread(buffer, n_bytes, 1, m_input) == 1 ) return FPK_RESULT_OK;
+    else return FPK_RESULT_READ_ERROR;
 }
 
 
@@ -116,8 +116,6 @@ static const fpk_hooks_t m_hooks =
 int main(int argc, char* argv[])
 {
     fpk_result_t result;
-    
-    printf("%lu\n", sizeof(fpk_context_t));
     
     if ( argc < 2 )
     {

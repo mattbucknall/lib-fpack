@@ -585,74 +585,12 @@ static void aes128_decrypt_cbc(fpk_context_t* ctx, uint8_t* block)
 #endif /* FPK_ENABLE_AES128_CBC */
 
 
-/* ==== RESULT TO STRING =================================================== */
-
-#ifdef FPK_ENABLE_RESULT_TO_STRING
-
-const char* fpk_result_to_string(fpk_result_t result)
-{
-    switch(result)
-    {
-    case FPK_RESULT_OK:
-        return "ok";
-
-    case FPK_RESULT_READ_ERROR:
-        return "read error";
-
-    case FPK_RESULT_UNEXPECTED_END_OF_INPUT:
-        return "unexpected end of input";
-
-    case FPK_RESULT_ERASE_ERROR:
-        return "erase error";
-
-    case FPK_RESULT_PROGRAM_ERROR:
-        return "program error";
-
-    case FPK_RESULT_UNKNOWN_ID:
-        return "unknown id";
-
-    case FPK_RESULT_CRC_MISMATCH:
-        return "crc mismatch";
-
-    case FPK_RESULT_INVALID_SIGNATURE:
-        return "invalid signature";
-
-    case FPK_RESULT_NO_CIPHER_KEY:
-        return "no cipher key";
-
-    case FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE:
-        return "unsupported authentication type";
-
-    case FPK_RESULT_UNSUPPORTED_CIPHER_TYPE:
-        return "unsupported cipher type";
-        
-    case FPK_RESULT_UNSUPPORTED_FPK_FILE_VERSION:
-        return "unsupported fpk file version";
-        
-    case FPK_RESULT_INVALID_FPK_FILE:
-        return "invalid fpk file";
-        
-    default:
-        return "undefined result";
-    }
-}
-
-#endif /* FPK_ENABLE_RESULT_TO_STRING */
-
+/* ==== HOOK WRAPPERS ====================================================== */
 
 static fpk_result_t read_file(fpk_context_t* ctx, uint8_t* buffer,
         uint8_t n_bytes)
 {
-    fpk_result_t result;
-    
-    result = ctx->hooks->read_file(buffer, n_bytes, ctx->user_data);
-    
-    if ( result == FPK_RESULT_OK )
-    {
-        
-    }
-    
-    return result;
+    return ctx->hooks->read_file(buffer, n_bytes, ctx->user_data);
 }
 
 
@@ -662,25 +600,268 @@ static fpk_result_t seek_file(fpk_context_t* ctx, uint32_t position)
 }
 
 
-static fpk_result_t verify_preamble(fpk_context_t* ctx)
+static fpk_result_t prepare_memory(fpk_context_t* ctx, const char* id)
 {
-    return FPK_RESULT_OK;
+    return ctx->hooks->prepare_memory(id, ctx->user_data);
 }
+
+
+static fpk_result_t program_memory(fpk_context_t* ctx, const char* id,
+        const uint8_t* data, uint8_t length)
+{
+    return ctx->hooks->program_memory(id, data, length, ctx->user_data);
+}
+
+
+static fpk_result_t finalize_memory(fpk_context_t* ctx, const char* id)
+{
+    return ctx->hooks->finalize_memory(id, ctx->user_data);
+}
+
+
+static const uint8_t* authentication_key(fpk_context_t* ctx,
+        fpk_authentication_type_t type)
+{
+    return ctx->hooks->authentication_key(type, ctx->user_data);
+}
+
+
+static const uint8_t* cipher_key(fpk_context_t* ctx, fpk_cipher_type_t type)
+{
+    return ctx->hooks->cipher_key(type, ctx->user_data);
+}
+
+
+/* ==== INPUT PARSING ====================================================== */
+
+#define FLAG_CAPTURE_CRC32      (1 << 0)
+#define FLAG_CAPTURE_AUTH       (1 << 1)
+#define FLAG_DECIPHER           (1 << 2)
+
+
+static fpk_result_t read_block(fpk_context_t* ctx)
+{
+    fpk_result_t result;
+    uint8_t flags = ctx->flags;
+
+    result = read_file(ctx, ctx->input, 16);
+    if ( result != FPK_RESULT_OK ) return result;
+
+    if ( flags & FLAG_CAPTURE_CRC32 ) crc32_update(ctx, ctx->input, 16);
+
+#ifdef FPK_ENABLE_HMAC_SHA256
+    if ( flags & FLAG_CAPTURE_AUTH ) hmac_update(ctx, ctx->input, 16);
+#endif /* FPK_ENABLE_HMAC_SHA256 */
+
+#ifdef FPK_ENABLE_AES128_CBC
+    if ( flags & FLAG_DECIPHER ) aes128_decrypt_cbc(ctx, ctx->input);
+#endif /* FPK_ENABLE_AES128_CBC */
+
+    return result;
+}
+
+
+static uint16_t parse_u16(const uint8_t* buffer)
+{
+    return buffer[0] | (buffer[1] << 8);
+}
+
+
+static uint32_t parse_u32(const uint8_t* buffer)
+{
+    return (uint32_t) buffer[0] | ( (uint32_t) buffer[1] << 8) |
+            ( (uint32_t) buffer[2] << 16) | ( (uint32_t) buffer[3] << 24);
+}
+
+
+/* ==== API ================================================================ */
+
+
+#ifdef FPK_ENABLE_RESULT_TO_STRING
+
+const char* fpk_result_to_string(fpk_result_t result)
+{
+    switch(result)
+    {
+    case FPK_RESULT_OK:
+        return "OK";
+
+    case FPK_RESULT_READ_ERROR:
+        return "Read error";
+
+    case FPK_RESULT_UNEXPECTED_END_OF_INPUT:
+        return "Unexpected end of input";
+
+    case FPK_RESULT_ERASE_ERROR:
+        return "Erase error";
+
+    case FPK_RESULT_PROGRAM_ERROR:
+        return "Program error";
+
+    case FPK_RESULT_UNKNOWN_ID:
+        return "Unknown id";
+
+    case FPK_RESULT_CRC_MISMATCH:
+        return "CRC mismatch";
+
+    case FPK_RESULT_INVALID_SIGNATURE:
+        return "Invalid signature";
+
+    case FPK_RESULT_NO_AUTHENTICATION_KEY:
+        return "No authentication key";
+
+    case FPK_RESULT_NO_CIPHER_KEY:
+        return "No cipher key";
+
+    case FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE:
+        return "Unsupported authentication type";
+
+    case FPK_RESULT_UNSUPPORTED_CIPHER_TYPE:
+        return "Unsupported cipher type";
+        
+    case FPK_RESULT_UNSUPPORTED_FPK_FILE_VERSION:
+        return "Unsupported FPK file version";
+        
+    case FPK_RESULT_INVALID_FPK_FILE:
+        return "Invalid FPK file";
+        
+    default:
+        return "Undefined result";
+    }
+}
+
+#endif /* FPK_ENABLE_RESULT_TO_STRING */
 
 
 fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
         const fpk_hooks_t* hooks, void* user_data)
 {
     fpk_result_t result;
+    uint8_t* input = ctx->input;
+    uint8_t auth_type;
+    uint8_t cipher_type;
+    const uint8_t* key;
     
     ctx->options = options;
     ctx->hooks = hooks;
     ctx->user_data = user_data;
-    ctx->buffer_in = 0;
-    ctx->buffer_out = 0;
-    
-    result = verify_preamble(ctx);
+    ctx->flags = FLAG_CAPTURE_CRC32;
+
+    crc32_reset(ctx);
+
+    result = read_block(ctx);
     if ( result != FPK_RESULT_OK ) return result;
-    
+
+    if ( input[0] != 0x46 ||
+        input[1] != 0x50 ||
+        input[2] != 0x4B ) return FPK_RESULT_INVALID_FPK_FILE;
+
+    if ( input[3] != 0x00 ) return FPK_RESULT_UNSUPPORTED_FPK_FILE_VERSION;
+
+    ctx->n_blocks = parse_u32(input + 4);
+
+    auth_type = input[8];
+    cipher_type = input[9];
+
+#ifdef FPK_ENABLE_HMAC_SHA256
+
+    if ( auth_type == FPK_AUTHENTICATION_TYPE_NONE )
+    {
+        if ( ctx->options & FPK_OPTION_ENFORCE_AUTHENTICATION )
+        {
+            return FPK_RESULT_INVALID_SIGNATURE;
+        }
+    }
+    else if ( auth_type == FPK_AUTHENTICATION_TYPE_HMAC_SHA256 )
+    {
+        key = authentication_key(ctx, auth_type);
+        if ( !key ) return FPK_RESULT_NO_AUTHENTICATION_KEY;
+
+        hmac_reset(ctx, key);
+
+        ctx->flags |= FLAG_CAPTURE_AUTH;
+    }
+    else
+    {
+        return FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE;
+    }
+
+#else /* FPK_ENABLE_HMAC_SHA256 */
+
+    if ( auth_type != FPK_AUTHENTICATION_TYPE_NONE )
+    {
+        return FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE;
+    }
+
+#endif /* FPK_ENABLE_HMAC_SHA256 */
+
+#ifdef FPK_ENABLE_AES128_CBC
+
+    if ( cipher_type != FPK_CIPHER_TYPE_NONE &&
+        cipher_type != FPK_CIPHER_TYPE_AES128_CBC )
+    {
+        return FPK_RESULT_UNSUPPORTED_CIPHER_TYPE;
+    }
+
+#else /* FPK_ENABLE_AES128_CBC */
+
+    if ( cipher_type != FPK_CIPHER_TYPE_NONE )
+    {
+        return FPK_RESULT_UNSUPPORTED_CIPHER_TYPE;
+    }
+
+#endif /* FPK_ENABLE_AES128_CBC */
+
+    for (uint32_t n = ctx->n_blocks; n--;)
+    {
+        result = read_block(ctx);
+        if ( result != FPK_RESULT_OK ) return result;
+    }
+
+    ctx->flags &= ~FLAG_CAPTURE_AUTH;
+
+    if ( auth_type == FPK_AUTHENTICATION_TYPE_HMAC_SHA256 )
+    {
+        hmac_digest(ctx, key, ctx->sha256_buffer);
+
+        result = read_block(ctx);
+        if ( result != FPK_RESULT_OK ) return result;
+
+        if ( memcmp(input, ctx->sha256_buffer, 16) != 0 )
+            return FPK_RESULT_INVALID_SIGNATURE;
+
+        result = read_block(ctx);
+        if ( result != FPK_RESULT_OK ) return result;
+
+        if ( memcmp(input, ctx->sha256_buffer + 16, 16) != 0 )
+            return FPK_RESULT_INVALID_SIGNATURE;
+    }
+
+    ctx->flags &= ~FLAG_CAPTURE_CRC32;
+
+    result = read_block(ctx);
+    if ( result != FPK_RESULT_OK ) return result;
+
+    if ( parse_u32(ctx->input) != ctx->crc32 )
+        return FPK_RESULT_CRC_MISMATCH;
+
+    result = seek_file(ctx, 16);
+    if ( result != FPK_RESULT_OK ) return result;
+
+    if ( cipher_type == FPK_CIPHER_TYPE_AES128_CBC )
+    {
+        key = cipher_key(ctx, cipher_type);
+        if ( !key ) return FPK_RESULT_NO_CIPHER_KEY;
+
+        ctx->flags |= FLAG_DECIPHER;
+
+        aes128_init(ctx, key);
+
+        result = read_block(ctx);
+        if ( result != FPK_RESULT_OK ) return result;
+
+        ctx->n_blocks--;
+    }
+
     return FPK_RESULT_OK;
 }

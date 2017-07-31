@@ -44,6 +44,7 @@ typedef enum
     FPK_RESULT_UNKNOWN_ID,
     FPK_RESULT_CRC_MISMATCH,
     FPK_RESULT_INVALID_SIGNATURE,
+    FPK_RESULT_NO_AUTHENTICATION_KEY,
     FPK_RESULT_NO_CIPHER_KEY,
     FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE,
     FPK_RESULT_UNSUPPORTED_CIPHER_TYPE,
@@ -96,10 +97,10 @@ typedef struct
     uint32_t options;
     const fpk_hooks_t* hooks;
     void* user_data;
-    uint8_t buffer[64];
-    uint8_t buffer_in;
-    uint8_t buffer_out;
+    uint8_t input[16];
+    uint8_t flags;
     uint32_t crc32;
+    uint32_t n_blocks;
     
 #ifdef FPK_ENABLE_HMAC_SHA256
     

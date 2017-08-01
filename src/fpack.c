@@ -590,45 +590,68 @@ static void aes128_decrypt_cbc(fpk_context_t* ctx, uint8_t* block)
 static fpk_result_t read_file(fpk_context_t* ctx, uint8_t* buffer,
         uint8_t n_bytes)
 {
+    if ( !ctx->hooks->read_file ) return FPK_RESULT_MANDATORY_HOOK_MISSING;
     return ctx->hooks->read_file(buffer, n_bytes, ctx->user_data);
 }
 
 
 static fpk_result_t seek_file(fpk_context_t* ctx, uint32_t position)
 {
+    if ( !ctx->hooks->seek_file ) return FPK_RESULT_MANDATORY_HOOK_MISSING;
     return ctx->hooks->seek_file(position, ctx->user_data);
 }
 
 
-static fpk_result_t prepare_memory(fpk_context_t* ctx, const char* id)
+static fpk_result_t prepare_memory(fpk_context_t* ctx, const char* id,
+        uint32_t size)
 {
-    return ctx->hooks->prepare_memory(id, ctx->user_data);
+    if ( !ctx->hooks->prepare_memory ) return FPK_RESULT_OK;
+    return ctx->hooks->prepare_memory(id, size, ctx->user_data);
 }
 
 
 static fpk_result_t program_memory(fpk_context_t* ctx, const char* id,
         const uint8_t* data, uint8_t length)
 {
+    if ( !ctx->hooks->program_memory ) return FPK_RESULT_PROGRAM_ERROR;
     return ctx->hooks->program_memory(id, data, length, ctx->user_data);
 }
 
 
 static fpk_result_t finalize_memory(fpk_context_t* ctx, const char* id)
 {
+    if ( !ctx->hooks->finalize_memory ) return FPK_RESULT_OK;
     return ctx->hooks->finalize_memory(id, ctx->user_data);
 }
 
 
+#ifdef FPK_ENABLE_HMAC_SHA256
+
 static const uint8_t* authentication_key(fpk_context_t* ctx,
         fpk_authentication_type_t type)
 {
+    if ( !ctx->hooks->authentication_key ) return NULL;
     return ctx->hooks->authentication_key(type, ctx->user_data);
 }
 
+#endif /* FPK_ENABLE_HMAC_SHA256 */
+
+
+#ifdef FPK_ENABLE_AES128_CBC
 
 static const uint8_t* cipher_key(fpk_context_t* ctx, fpk_cipher_type_t type)
 {
+    if ( !ctx->hooks->cipher_key ) return NULL;
     return ctx->hooks->cipher_key(type, ctx->user_data);
+}
+
+#endif /* FPK_ENABLE_AES128_CBC */
+
+
+static fpk_result_t handle_metadata(fpk_context_t* ctx, const char* key,
+        const char* value)
+{
+    return ctx->hooks->handle_metadata(key, value, ctx->user_data);
 }
 
 
@@ -658,6 +681,36 @@ static fpk_result_t read_block(fpk_context_t* ctx)
 #endif /* FPK_ENABLE_AES128_CBC */
 
     return result;
+}
+
+
+static fpk_result_t read_input(fpk_context_t* ctx, uint8_t* buffer,
+        uint32_t length)
+{
+    uint8_t* i = buffer;
+    uint8_t* e = buffer + length;
+    
+    while (i != e)
+    {
+        if ( ctx->cursor == 0 )
+        {
+            fpk_result_t result;
+            
+            if ( ctx->n_blocks == 0 )
+                return FPK_RESULT_UNEXPECTED_END_OF_INPUT;
+            
+            result = read_block(ctx);
+            if ( result != FPK_RESULT_OK ) return result;
+            
+            ctx->n_blocks--;
+        }
+        
+        *i++ = *buffer++;
+        
+        ctx->cursor = (ctx->cursor + 1) & 15;
+    }
+    
+    return FPK_RESULT_OK;
 }
 
 
@@ -706,6 +759,9 @@ const char* fpk_result_to_string(fpk_result_t result)
 
     case FPK_RESULT_INVALID_SIGNATURE:
         return "Invalid signature";
+        
+    case FPK_RESULT_SIGNATURE_MISSING:
+        return "Signature missing";
 
     case FPK_RESULT_NO_AUTHENTICATION_KEY:
         return "No authentication key";
@@ -725,6 +781,18 @@ const char* fpk_result_to_string(fpk_result_t result)
     case FPK_RESULT_INVALID_FPK_FILE:
         return "Invalid FPK file";
         
+    case FPK_RESULT_INVALID_METADATA:
+        return "Invalid metadata";
+        
+    case FPK_RESULT_INVALID_IMAGE:
+        return "Invalid image";
+        
+    case FPK_RESULT_IMAGE_TOO_LARGE:
+        return "Image too large";
+        
+    case FPK_RESULT_MANDATORY_HOOK_MISSING:
+        return "Mandatory hook missing";
+        
     default:
         return "Undefined result";
     }
@@ -740,11 +808,18 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
     uint8_t* input = ctx->input;
     uint8_t auth_type;
     uint8_t cipher_type;
-    const uint8_t* key;
+    uint16_t n_objects;
+    uint8_t* key_buffer = ctx->key_buffer;
+    uint8_t* data_buffer = ctx->data_buffer;
+    
+#if defined(FPK_ENABLE_HMAC_SHA256) || defined(FPK_ENABLE_AES128_CBC)
+    const uint8_t* key = NULL;
+#endif
     
     ctx->options = options;
     ctx->hooks = hooks;
     ctx->user_data = user_data;
+    ctx->cursor = 0;
     ctx->flags = FLAG_CAPTURE_CRC32;
 
     crc32_reset(ctx);
@@ -769,7 +844,7 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
     {
         if ( ctx->options & FPK_OPTION_ENFORCE_AUTHENTICATION )
         {
-            return FPK_RESULT_INVALID_SIGNATURE;
+            return FPK_RESULT_SIGNATURE_MISSING;
         }
     }
     else if ( auth_type == FPK_AUTHENTICATION_TYPE_HMAC_SHA256 )
@@ -812,13 +887,15 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
 
 #endif /* FPK_ENABLE_AES128_CBC */
 
-    for (uint32_t n = ctx->n_blocks; n--;)
+    for (uint32_t i = ctx->n_blocks; i--;)
     {
         result = read_block(ctx);
         if ( result != FPK_RESULT_OK ) return result;
     }
 
     ctx->flags &= ~FLAG_CAPTURE_AUTH;
+
+#ifdef FPK_ENABLE_HMAC_SHA256
 
     if ( auth_type == FPK_AUTHENTICATION_TYPE_HMAC_SHA256 )
     {
@@ -837,6 +914,8 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
             return FPK_RESULT_INVALID_SIGNATURE;
     }
 
+#endif /* FPK_ENABLE_HMAC_SHA256 */
+
     ctx->flags &= ~FLAG_CAPTURE_CRC32;
 
     result = read_block(ctx);
@@ -847,6 +926,8 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
 
     result = seek_file(ctx, 16);
     if ( result != FPK_RESULT_OK ) return result;
+
+#ifdef FPK_ENABLE_AES128_CBC
 
     if ( cipher_type == FPK_CIPHER_TYPE_AES128_CBC )
     {
@@ -861,6 +942,116 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
         if ( result != FPK_RESULT_OK ) return result;
 
         ctx->n_blocks--;
+    }
+
+#endif /* FPK_ENABLE_AES128_CBC */
+
+    result = read_input(ctx, data_buffer, 2);
+    if ( result != FPK_RESULT_OK ) return result;
+    
+    n_objects = parse_u16(data_buffer);
+    
+    for (uint8_t i = 0; i < n_objects; i++)
+    {
+        uint8_t key_length;
+        uint8_t value_length;
+        
+        result = read_input(ctx, key_buffer, 1);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        key_length = key_buffer[0];
+        if ( key_length >= FPK_KEY_BUFFER_SIZE )
+            return FPK_RESULT_INVALID_METADATA;
+        
+        result = read_input(ctx, key_buffer, key_length);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        key_buffer[key_length] = 0;
+        
+        result = read_input(ctx, data_buffer, 1);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        value_length = data_buffer[0];
+        if ( value_length >= FPK_DATA_BUFFER_SIZE )
+            return FPK_RESULT_INVALID_METADATA;
+        
+        result = read_input(ctx, data_buffer, value_length);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        data_buffer[value_length] = 0;
+        
+        result = handle_metadata(
+            ctx,
+            (const char*) key_buffer,
+            (const char*) data_buffer
+        );
+        
+        if ( result != FPK_RESULT_OK ) return result;
+    }
+    
+    result = read_input(ctx, data_buffer, 2);
+    if ( result != FPK_RESULT_OK ) return result;
+    
+    n_objects = parse_u16(data_buffer);
+    
+    for (uint16_t i = 0; i < n_objects; i++)
+    {
+        uint8_t id_length;
+        uint32_t image_length;
+        
+        result = read_input(ctx, key_buffer, 1);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        id_length = key_buffer[0];
+        if ( id_length >= FPK_KEY_BUFFER_SIZE )
+            return FPK_RESULT_INVALID_IMAGE;
+        
+        result = read_input(ctx, key_buffer, id_length);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        key_buffer[id_length] = 0;
+        
+        result = read_input(ctx, data_buffer, 4);
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        image_length = parse_u32(data_buffer);
+        
+        result = prepare_memory(
+            ctx,
+            (const char*) key_buffer,
+            image_length
+        );
+        
+        if ( result != FPK_RESULT_OK ) return result;
+        
+        while (image_length > 0)
+        {
+            uint32_t remaining = image_length;
+            
+            if ( remaining > FPK_DATA_BUFFER_SIZE )
+                remaining = FPK_DATA_BUFFER_SIZE;
+            
+            result = read_input(ctx, data_buffer, remaining);
+            if ( result != FPK_RESULT_OK ) return result;
+            
+            result = program_memory(
+                ctx,
+                (const char*) key_buffer,
+                data_buffer,
+                remaining
+            );
+            
+            if ( result != FPK_RESULT_OK ) return result;
+            
+            image_length -= remaining;
+        }
+        
+        result = finalize_memory(
+            ctx,
+            (const char*) key_buffer
+        );
+        
+        if ( result != FPK_RESULT_OK ) return result;
     }
 
     return FPK_RESULT_OK;

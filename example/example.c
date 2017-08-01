@@ -48,8 +48,11 @@ static fpk_result_t seek_file_cb(uint32_t position, void* user_data)
 }
 
 
-static fpk_result_t prepare_memory_cb(const char* id, void* user_data)
+static fpk_result_t prepare_memory_cb(const char* id, uint32_t size,
+        void* user_data)
 {
+    printf("Image '%s' size: %u\n", id, size);
+    
     m_output = fopen(id, "wb");
     
     if ( m_output ) return FPK_RESULT_OK;
@@ -101,6 +104,14 @@ static const uint8_t* cipher_key_cb(fpk_cipher_type_t type, void* user_data)
 }
 
 
+static fpk_result_t handle_metadata_cb(const char* key, const char* value,
+        void* user_data)
+{
+    printf("%s: %s\n", key, value);
+    return FPK_RESULT_OK;
+}
+
+
 static const fpk_hooks_t m_hooks =
 {
     .read_file =            read_file_cb,
@@ -109,7 +120,8 @@ static const fpk_hooks_t m_hooks =
     .program_memory =       program_memory_cb,
     .finalize_memory =      finalize_memory_cb,
     .authentication_key =   authentication_key_cb,
-    .cipher_key =           cipher_key_cb
+    .cipher_key =           cipher_key_cb,
+    .handle_metadata =      handle_metadata_cb
 };
 
 

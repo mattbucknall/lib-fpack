@@ -29,9 +29,9 @@
 #include <stdint.h>
 
 
-#define FPK_ENABLE_RESULT_TO_STRING     1
-#define FPK_ENABLE_HMAC_SHA256          1
-#define FPK_ENABLE_AES128_CBC           1
+#define FPK_ENABLE_RESULT_TO_STRING
+#define FPK_ENABLE_HMAC_SHA256
+#define FPK_ENABLE_AES128_CBC
 
 
 typedef enum
@@ -44,12 +44,17 @@ typedef enum
     FPK_RESULT_UNKNOWN_ID,
     FPK_RESULT_CRC_MISMATCH,
     FPK_RESULT_INVALID_SIGNATURE,
+    FPK_RESULT_SIGNATURE_MISSING,
     FPK_RESULT_NO_AUTHENTICATION_KEY,
     FPK_RESULT_NO_CIPHER_KEY,
     FPK_RESULT_UNSUPPORTED_AUTHENTICATION_TYPE,
     FPK_RESULT_UNSUPPORTED_CIPHER_TYPE,
     FPK_RESULT_UNSUPPORTED_FPK_FILE_VERSION,
-    FPK_RESULT_INVALID_FPK_FILE
+    FPK_RESULT_INVALID_FPK_FILE,
+    FPK_RESULT_INVALID_METADATA,
+    FPK_RESULT_INVALID_IMAGE,
+    FPK_RESULT_IMAGE_TOO_LARGE,
+    FPK_RESULT_MANDATORY_HOOK_MISSING
 
 } fpk_result_t;
 
@@ -77,7 +82,8 @@ typedef struct
 
     fpk_result_t (*seek_file) (uint32_t position, void* user_data);
 
-    fpk_result_t (*prepare_memory) (const char* id, void* user_data);
+    fpk_result_t (*prepare_memory) (const char* id, uint32_t size,
+            void* user_data);
 
     fpk_result_t (*program_memory) (const char* id, const uint8_t* data,
             uint8_t length, void* user_data);
@@ -88,8 +94,15 @@ typedef struct
             void* user_data);
 
     const uint8_t* (*cipher_key) (fpk_cipher_type_t type, void* user_data);
+    
+    fpk_result_t (*handle_metadata) (const char* key, const char* value,
+            void* user_data);
 
 } fpk_hooks_t;
+
+
+#define FPK_KEY_BUFFER_SIZE         16
+#define FPK_DATA_BUFFER_SIZE        64
 
 
 typedef struct 
@@ -98,6 +111,9 @@ typedef struct
     const fpk_hooks_t* hooks;
     void* user_data;
     uint8_t input[16];
+    uint8_t key_buffer[FPK_KEY_BUFFER_SIZE];
+    uint8_t data_buffer[FPK_DATA_BUFFER_SIZE];
+    uint8_t cursor;
     uint8_t flags;
     uint32_t crc32;
     uint32_t n_blocks;

@@ -21,7 +21,7 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
-
+#include <stdio.h>
 #include <string.h>
 
 #include "fpack.h"
@@ -687,6 +687,7 @@ static fpk_result_t read_block(fpk_context_t* ctx)
 static fpk_result_t read_input(fpk_context_t* ctx, uint8_t* buffer,
         uint32_t length)
 {
+    uint8_t* input = ctx->input;
     uint8_t* i = buffer;
     uint8_t* e = buffer + length;
     
@@ -705,7 +706,7 @@ static fpk_result_t read_input(fpk_context_t* ctx, uint8_t* buffer,
             ctx->n_blocks--;
         }
         
-        *i++ = *buffer++;
+        *i++ = input[ctx->cursor];
         
         ctx->cursor = (ctx->cursor + 1) & 15;
     }
@@ -920,7 +921,7 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
 
     result = read_block(ctx);
     if ( result != FPK_RESULT_OK ) return result;
-
+    
     if ( parse_u32(ctx->input) != ctx->crc32 )
         return FPK_RESULT_CRC_MISMATCH;
 
@@ -950,6 +951,7 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
     if ( result != FPK_RESULT_OK ) return result;
     
     n_objects = parse_u16(data_buffer);
+    
     
     for (uint8_t i = 0; i < n_objects; i++)
     {

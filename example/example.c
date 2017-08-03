@@ -44,7 +44,8 @@ static fpk_result_t read_file_cb(uint8_t* buffer, uint8_t n_bytes,
 
 static fpk_result_t seek_file_cb(uint32_t position, void* user_data)
 {
-    return FPK_RESULT_OK;
+    if ( fseek(m_input, position, SEEK_SET) == 0 ) return FPK_RESULT_OK;
+    else return FPK_RESULT_READ_ERROR;
 }
 
 
@@ -63,9 +64,7 @@ static fpk_result_t prepare_memory_cb(const char* id, uint32_t size,
 static fpk_result_t program_memory_cb(const char* id, const uint8_t* data,
         uint8_t length, void* user_data)
 {
-    size_t n_written = fwrite(data, length, 1, m_output);
-    
-    if ( n_written == length ) return FPK_RESULT_OK;
+    if ( fwrite(data, length, 1, m_output) == 1 ) return FPK_RESULT_OK;
     else return FPK_RESULT_PROGRAM_ERROR;
 }
 
@@ -145,7 +144,7 @@ int main(int argc, char* argv[])
     
     result = fpk_unpack(
         &m_ctx,
-        FPK_OPTION_ENFORCE_AUTHENTICATION,
+        0,//FPK_OPTION_ENFORCE_AUTHENTICATION,
         &m_hooks,
         NULL
     );

@@ -155,7 +155,7 @@ static void sha256_reset(fpk_context_t* ctx)
 static void sha256_transform(fpk_context_t* ctx)
 {
     uint32_t* state = ctx->sha256_state;
-    uint8_t* m = ctx->sha256_m;
+    uint32_t* m = ctx->sha256_m;
     uint8_t* buffer = ctx->sha256_buffer;
     uint32_t a, b, c, d, e, f, g, h, i, j, t1, t2;
     
@@ -273,6 +273,17 @@ static void sha256_digest(fpk_context_t* ctx, uint8_t* hash)
 }
 
 
+static void dump_hex(const uint8_t* buffer, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+    {
+        printf("%02x", buffer[i]);
+    }
+
+    printf("\n");
+}
+
+
 static void hmac_reset(fpk_context_t* ctx, const uint8_t* key)
 {
     uint8_t i_key[8];
@@ -293,7 +304,7 @@ static void hmac_reset(fpk_context_t* ctx, const uint8_t* key)
         sha256_update(ctx, i_key, 8);
     }
     
-    memset(i_key, 0, 8);
+    memset(i_key, 0x36, 8);
     
     for (uint8_t i = 0; i < 4; i++)
     {
@@ -330,7 +341,7 @@ static void hmac_digest(fpk_context_t* ctx, const uint8_t* key, uint8_t* hash)
         sha256_update(ctx, o_key, 8);
     }
     
-    memset(o_key, 0, 8);
+    memset(o_key, 0x5C, 8);
     
     for (uint8_t i = 0; i < 4; i++)
     {
@@ -504,13 +515,13 @@ static void aes128_inv_mix_columns(fpk_context_t* ctx, uint8_t* block)
 }
 
 
-static void aes128_init(fpk_context_t* ctx, const uint8_t* key)
+static void aes128_init(fpk_context_t* ctx, const uint8_t* key, const uint8_t* iv)
 {
     uint8_t* round_key = ctx->aes128_round_key;
     uint8_t temp[4];
     uint8_t byte;
     
-    memset(ctx->aes128_iv, 0, 16);
+    memcpy(ctx->aes128_iv, iv, 16);
     memcpy(round_key, key, 16);
     
     for (uint8_t i = 4; i < 44; i++)
@@ -893,25 +904,25 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
         result = read_block(ctx);
         if ( result != FPK_RESULT_OK ) return result;
     }
-
+    
     ctx->flags &= ~FLAG_CAPTURE_AUTH;
 
 #ifdef FPK_ENABLE_HMAC_SHA256
 
     if ( auth_type == FPK_AUTHENTICATION_TYPE_HMAC_SHA256 )
     {
-        hmac_digest(ctx, key, ctx->sha256_buffer);
-
+        hmac_digest(ctx, key, ctx->hmac);
+        
         result = read_block(ctx);
         if ( result != FPK_RESULT_OK ) return result;
 
-        if ( memcmp(input, ctx->sha256_buffer, 16) != 0 )
+        if ( memcmp(input, ctx->hmac, 16) != 0 )
             return FPK_RESULT_INVALID_SIGNATURE;
 
         result = read_block(ctx);
         if ( result != FPK_RESULT_OK ) return result;
-
-        if ( memcmp(input, ctx->sha256_buffer + 16, 16) != 0 )
+        
+        if ( memcmp(input, ctx->hmac + 16, 16) != 0 )
             return FPK_RESULT_INVALID_SIGNATURE;
     }
 
@@ -922,7 +933,7 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
     result = read_block(ctx);
     if ( result != FPK_RESULT_OK ) return result;
     
-    if ( parse_u32(ctx->input) != ctx->crc32 )
+    if ( parse_u32(input) != ctx->crc32 )
         return FPK_RESULT_CRC_MISMATCH;
 
     result = seek_file(ctx, 16);
@@ -935,13 +946,13 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
         key = cipher_key(ctx, cipher_type);
         if ( !key ) return FPK_RESULT_NO_CIPHER_KEY;
 
-        ctx->flags |= FLAG_DECIPHER;
-
-        aes128_init(ctx, key);
-
         result = read_block(ctx);
         if ( result != FPK_RESULT_OK ) return result;
 
+        aes128_init(ctx, key, input);
+        dump_hex(input, 16);
+
+        ctx->flags |= FLAG_DECIPHER;
         ctx->n_blocks--;
     }
 

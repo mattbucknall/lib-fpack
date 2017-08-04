@@ -121,11 +121,11 @@ typedef struct
 #ifdef FPK_ENABLE_HMAC_SHA256
     
     uint8_t sha256_buffer[64];
-    uint8_t sha256_m[64];
+    uint32_t sha256_m[64];
     uint32_t sha256_state[8];
     uint8_t sha256_buffer_in;
     uint64_t sha256_bit_len;
-    
+    uint8_t hmac[32];
     
 #endif /* FPK_ENABLE_HMAC_SHA256 */
 

@@ -116,6 +116,7 @@ typedef struct
     uint8_t cursor;
     uint8_t flags;
     uint32_t crc32;
+    uint32_t timestamp;
     uint32_t n_blocks;
     
 #ifdef FPK_ENABLE_HMAC_SHA256

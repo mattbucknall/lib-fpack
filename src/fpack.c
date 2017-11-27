@@ -886,10 +886,11 @@ fpk_result_t fpk_unpack(fpk_context_t* ctx, uint32_t options,
 
     if ( input[3] != 0x00 ) return FPK_RESULT_UNSUPPORTED_FPK_FILE_VERSION;
 
-    ctx->n_blocks = parse_u32(input + 4);
+    ctx->timestamp = parse_u32(input + 4);
+    ctx->n_blocks = parse_u32(input + 8);
 
-    auth_type = input[8];
-    cipher_type = input[9];
+    auth_type = input[12];
+    cipher_type = input[13];
 
 #ifdef FPK_ENABLE_HMAC_SHA256
 
